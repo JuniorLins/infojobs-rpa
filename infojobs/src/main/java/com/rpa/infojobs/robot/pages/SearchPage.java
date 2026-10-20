@@ -11,7 +11,6 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Component
 public class SearchPage extends BasePage {
@@ -30,6 +29,9 @@ public class SearchPage extends BasePage {
 
     @Value("${busca.localizacao:São Paulo}")
     private String localizacao;
+
+    // SELETOR NOVO: Baseado no HTML atual do InfoJobs
+    private static final String SELETOR_CARDS = "div.js_rowCard";
 
     public void buscarVagasComFallback() {
         List<String> termos = Arrays.asList(
@@ -89,24 +91,26 @@ public class SearchPage extends BasePage {
                 campoBusca.sendKeys(Keys.ENTER);
             }
 
-            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("article.job-item, div.offer-item, div.job-card")));
+            // Espera os cards corretos aparecerem
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(SELETOR_CARDS)));
             fecharPopupCookiesSeExistir();
 
         } catch (Exception e) {
-            logger.error("Erro na busca: {}", e.getMessage());
+            logger.error("Erro na busca via interface: {}", e.getMessage());
             buscarPorUrlDireta(termos, local);
         }
     }
 
     private void buscarPorUrlDireta(String termo, String local) {
         try {
+            // A URL correta do InfoJobs hoje é com .aspx e parâmetros palavra/provincia
             String url = String.format(
-                    "https://www.infojobs.com.br/empregos?keyword=%s&location=%s",
-                    termo.replace(" ", "+"),
-                    local.replace(" ", "+")
+                    "https://www.infojobs.com.br/empregos.aspx?palabra=%s&provincia=64", // 64 = SP
+                    termo.replace(" ", "+")
             );
+            logger.info("Buscando via URL direta: {}", url);
             driver.get(url);
-            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("article.job-item, div.offer-item, div.job-card")));
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(SELETOR_CARDS)));
             fecharPopupCookiesSeExistir();
         } catch (Exception e) {
             logger.error("Erro na busca por URL direta: {}", e.getMessage());
@@ -115,41 +119,31 @@ public class SearchPage extends BasePage {
 
     private WebElement encontrarCampoBusca() {
         String[] seletoresCSS = {
-                "input[name='keyword']",
-                "input[name='q']",
+                "input[name='palabra']",
+                "input[id='palabra']",
                 "input[placeholder*='cargo' i]",
                 "input[class*='search']"
         };
-
         for (String seletor : seletoresCSS) {
             try {
                 WebElement elemento = driver.findElement(By.cssSelector(seletor));
-                if (elemento.isDisplayed() && elemento.isEnabled()) {
-                    return elemento;
-                }
-            } catch (Exception e) {
-                // Próximo
-            }
+                if (elemento.isDisplayed() && elemento.isEnabled()) return elemento;
+            } catch (Exception ignored) {}
         }
         return null;
     }
 
     private WebElement encontrarCampoLocalizacao() {
         String[] seletores = {
-                "input[name='location']",
-                "input[placeholder*='local' i]",
-                "input[class*='location']"
+                "input[name='provincia']",
+                "input[id='provincia']",
+                "input[placeholder*='local' i]"
         };
-
         for (String seletor : seletores) {
             try {
                 WebElement elemento = driver.findElement(By.cssSelector(seletor));
-                if (elemento.isDisplayed() && elemento.isEnabled()) {
-                    return elemento;
-                }
-            } catch (Exception e) {
-                // Próximo
-            }
+                if (elemento.isDisplayed() && elemento.isEnabled()) return elemento;
+            } catch (Exception ignored) {}
         }
         return null;
     }
@@ -158,58 +152,65 @@ public class SearchPage extends BasePage {
         String[] seletores = {
                 "button[type='submit']",
                 "button[class*='search']",
-                "input[type='submit']"
+                "button[id='btnSearch']"
         };
-
         for (String seletor : seletores) {
             try {
                 List<WebElement> botoes = driver.findElements(By.cssSelector(seletor));
                 for (WebElement botao : botoes) {
-                    if (botao.isDisplayed() && botao.isEnabled()) {
-                        return botao;
-                    }
+                    if (botao.isDisplayed() && botao.isEnabled()) return botao;
                 }
-            } catch (Exception e) {
-                // Próximo
-            }
+            } catch (Exception ignored) {}
         }
         return null;
     }
 
+    // Metodo Atualizado: Filtra os cards duplicados
     private List<WebElement> encontrarListaVagas() {
-        String[] seletores = {
-                "article.job-item",
-                "div.offer-item",
-                "div.job-card",
-                "div[class*='job']",
-                "div[class*='vaga']"
-        };
+        try {
+            List<WebElement> elementos = driver.findElements(By.cssSelector(SELETOR_CARDS));
+            List<WebElement> filtrados = new ArrayList<>();
+            java.util.Set<String> urlsVistas = new java.util.HashSet<>();
 
-        for (String seletor : seletores) {
-            try {
-                List<WebElement> elementos = driver.findElements(By.cssSelector(seletor));
-                if (!elementos.isEmpty()) {
-                    return elementos;
+            for (WebElement el : elementos) {
+                if (!el.isDisplayed()) continue;
+
+                // Pega a URL para evitar duplicatas
+                String href = el.getAttribute("data-href");
+                if (href == null || href.isEmpty()) {
+                    try {
+                        href = el.findElement(By.cssSelector("a")).getAttribute("href");
+                    } catch (Exception ignored) {}
                 }
-            } catch (Exception e) {
-                // Próximo
+
+                // Se a URL for válida e ainda não foi vista, adiciona à lista
+                if (href != null && !href.isEmpty() && !urlsVistas.contains(href)) {
+                    urlsVistas.add(href);
+                    filtrados.add(el);
+                }
             }
+
+            if (!filtrados.isEmpty()) {
+                logger.info("Lista de vagas filtrada: {} elementos únicos", filtrados.size());
+                return filtrados;
+            }
+        } catch (Exception e) {
+            logger.warn("Erro ao buscar elementos: {}", e.getMessage());
         }
         return new ArrayList<>();
     }
 
     public boolean temResultados() {
         try {
+            // Verifica se há mensagem de "nenhum resultado"
             try {
                 WebElement mensagem = driver.findElement(
-                        By.xpath("//*[contains(text(), 'Nenhuma vaga') or contains(text(), 'Sem resultados')]")
+                        By.xpath("//*[contains(text(), 'Nenhuma vaga') or contains(text(), 'Sem resultados') or contains(text(), 'não encontrou')]")
                 );
                 if (mensagem.isDisplayed()) {
                     return false;
                 }
-            } catch (Exception e) {
-                // OK
-            }
+            } catch (Exception ignored) {}
 
             List<WebElement> vagas = encontrarListaVagas();
             return !vagas.isEmpty();
@@ -225,7 +226,7 @@ public class SearchPage extends BasePage {
     public boolean estaNaPaginaDeBusca() {
         try {
             String url = driver.getCurrentUrl().toLowerCase();
-            return url.contains("empregos") || url.contains("vagas") || url.contains("busca") || url.contains("jobs");
+            return url.contains("empregos") || url.contains("vagas") || url.contains("busca");
         } catch (Exception e) {
             return false;
         }
@@ -233,28 +234,11 @@ public class SearchPage extends BasePage {
 
     public void irParaPaginaBusca() {
         try {
-            if (estaNaPaginaDeBusca()) {
-                return;
-            }
+            if (estaNaPaginaDeBusca()) return;
 
-            String[] urlsBusca = {
-                    "https://www.infojobs.com.br/empregos.aspx",
-                    "https://www.infojobs.com.br/vagas",
-                    "https://www.infojobs.com.br/empregos"
-            };
-
-            for (String url : urlsBusca) {
-                try {
-                    driver.get(url);
-                    wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("article.job-item, div.offer-item, div.job-card")));
-                    if (estaNaPaginaDeBusca()) {
-                        fecharPopupCookiesSeExistir();
-                        return;
-                    }
-                } catch (Exception e) {
-                    logger.debug("Falha ao acessar: {}", url);
-                }
-            }
+            driver.get("https://www.infojobs.com.br/empregos.aspx");
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(SELETOR_CARDS)));
+            fecharPopupCookiesSeExistir();
         } catch (Exception e) {
             logger.error("Erro ao navegar para página de busca: {}", e.getMessage());
         }
@@ -269,44 +253,55 @@ public class SearchPage extends BasePage {
             } else {
                 driver.navigate().back();
             }
-
-            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("article.job-item, div.offer-item, div.job-card")));
+            wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(SELETOR_CARDS)));
             fecharPopupCookiesSeExistir();
         } catch (Exception e) {
             logger.error("Erro ao voltar para lista: {}", e.getMessage());
         }
     }
 
+    // MÉTODO ATUALIZADO: Espera a URL da nova aba carregar
     public void clicarNaVaga(int indice) {
         try {
-            List<WebElement> linksVagas = driver.findElements(By.cssSelector(
-                    "h2 a[href*='oferta'], h2 a[href*='vaga'], a[href*='oferta'], a[href*='vaga']"
-            ));
+            List<WebElement> cards = encontrarListaVagas();
 
-            if (linksVagas.isEmpty()) {
-                linksVagas = driver.findElements(By.xpath(
-                        "//a[contains(@href, 'oferta') or contains(@href, 'vaga')]"
-                ));
-            }
-
-            List<WebElement> linksFiltrados = linksVagas.stream()
-                    .filter(link -> !link.getText().trim().isEmpty())
-                    .collect(Collectors.toList());
-
-            if (linksFiltrados.isEmpty() || indice >= linksFiltrados.size()) {
-                logger.warn("Link inválido");
+            if (cards.isEmpty() || indice >= cards.size()) {
                 return;
             }
 
-            WebElement linkVaga = linksFiltrados.get(indice);
-            String urlVaga = linkVaga.getAttribute("href");
+            WebElement card = cards.get(indice);
+            ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView(true);", card);
+            sleep(500);
 
-            ((JavascriptExecutor) driver).executeScript("window.open(arguments[0], '_blank');", urlVaga);
+            String urlVaga = card.getAttribute("data-href");
+            if (urlVaga == null || urlVaga.isEmpty()) {
+                try {
+                    WebElement link = card.findElement(By.cssSelector("a"));
+                    urlVaga = link.getAttribute("href");
+                } catch (Exception ignored) {}
+            }
 
-            ArrayList<String> tabs = new ArrayList<>(driver.getWindowHandles());
-            if (tabs.size() > 1) {
-                driver.switchTo().window(tabs.get(tabs.size() - 1));
-                wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector("h2.h3.font-weight-bold.text-body")));
+            if (urlVaga != null && !urlVaga.isEmpty()) {
+                if (!urlVaga.startsWith("http")) {
+                    urlVaga = "https://www.infojobs.com.br" + urlVaga;
+                }
+                logger.info("Abrindo vaga [{}] na URL: {}", indice, urlVaga);
+
+                // Abre a nova aba
+                ((JavascriptExecutor) driver).executeScript("window.open(arguments[0], '_blank');", urlVaga);
+                sleep(1500);
+
+                ArrayList<String> tabs = new ArrayList<>(driver.getWindowHandles());
+                if (tabs.size() > 1) {
+                    driver.switchTo().window(tabs.get(tabs.size() - 1));
+
+                    // O SEGREDO ESTÁ AQUI: Espera a URL conter "vaga" ou "oferta" para prosseguir
+                    wait.until(ExpectedConditions.or(
+                            ExpectedConditions.urlContains("vaga"),
+                            ExpectedConditions.urlContains("oferta")
+                    ));
+                    logger.info("Nova aba carregada: {}", driver.getCurrentUrl());
+                }
             }
         } catch (Exception e) {
             logger.error("Erro ao clicar na vaga {}: {}", indice, e.getMessage());
@@ -318,10 +313,8 @@ public class SearchPage extends BasePage {
             WebElement popup = driver.findElement(By.id("didomi-popup"));
             if (popup.isDisplayed()) {
                 ((JavascriptExecutor) driver).executeScript("document.getElementById('didomi-popup').remove();");
-                sleep(1000);
+                sleep(500);
             }
-        } catch (Exception e) {
-            // OK
-        }
+        } catch (Exception ignored) {}
     }
 }

@@ -15,12 +15,15 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "vagas")
+@Table(name = "vagas", uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "url"}))
 public class Vaga {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Column(name = "user_id", nullable = false)
+    private String userId;
 
     @Column(nullable = false)
     private String titulo;
@@ -29,7 +32,6 @@ public class Vaga {
     private String empresa;
 
     private String localizacao;
-
     private String salario;
 
     @Column(columnDefinition = "TEXT")
@@ -37,7 +39,7 @@ public class Vaga {
 
     private LocalDate dataPublicacao;
 
-    @Column(unique = true)
+    @Column(nullable = false, length = 500)
     private String url;
 
     @CreationTimestamp

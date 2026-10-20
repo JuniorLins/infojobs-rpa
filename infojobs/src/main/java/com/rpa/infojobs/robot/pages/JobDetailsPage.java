@@ -19,13 +19,11 @@ public class JobDetailsPage extends BasePage {
     public boolean isPaginaVagaValida() {
         try {
             String url = driver.getCurrentUrl();
+            // Como o clicarNaVaga já esperou a URL carregar, isso será instantâneo
             if (url.contains("oferta") || url.contains("vaga")) {
                 return true;
             }
-            WebElement titulo = wait.until(ExpectedConditions.presenceOfElementLocated(
-                    By.cssSelector("h2.h3.font-weight-bold.text-body")
-            ));
-            return titulo.isDisplayed();
+            return false;
         } catch (Exception e) {
             return false;
         }
@@ -60,18 +58,20 @@ public class JobDetailsPage extends BasePage {
     }
 
     private String extrairTitulo() {
+        // Seletores mais abrangentes, usando shortWait (5s) para não travar o robô
         String[] seletores = {
                 "h2.h3.font-weight-bold.text-body",
-                "h2[class*='font-weight-bold']",
-                "h1[class*='title']"
+                "h1",
+                "h2",
+                ".job-title"
         };
         for (String seletor : seletores) {
             try {
-                WebElement elemento = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
-                return elemento.getText().trim();
-            } catch (Exception e) {
-                // Próximo
-            }
+                WebElement elemento = shortWait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
+                if (elemento.isDisplayed() && !elemento.getText().isBlank()) {
+                    return elemento.getText().trim();
+                }
+            } catch (Exception ignored) {}
         }
         return "Título não encontrado";
     }
@@ -84,7 +84,7 @@ public class JobDetailsPage extends BasePage {
         };
         for (String seletor : seletores) {
             try {
-                WebElement elemento = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
+                WebElement elemento = shortWait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
                 return elemento.getText().trim();
             } catch (Exception e) {
                 // Próximo
@@ -97,7 +97,7 @@ public class JobDetailsPage extends BasePage {
         String[] seletores = {".location", ".city", "[class*='location']"};
         for (String seletor : seletores) {
             try {
-                WebElement elemento = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
+                WebElement elemento = shortWait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
                 return elemento.getText().trim();
             } catch (Exception e) {
                 // Próximo
@@ -110,7 +110,7 @@ public class JobDetailsPage extends BasePage {
         String[] seletores = {".salary", "[class*='salary']"};
         for (String seletor : seletores) {
             try {
-                WebElement elemento = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
+                WebElement elemento = shortWait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
                 return elemento.getText().trim();
             } catch (Exception e) {
                 // Próximo
@@ -127,7 +127,7 @@ public class JobDetailsPage extends BasePage {
         };
         for (String seletor : seletores) {
             try {
-                WebElement elemento = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
+                WebElement elemento = shortWait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
                 String texto = elemento.getText().trim();
                 if (texto.length() > 50) {
                     return texto;
@@ -143,7 +143,7 @@ public class JobDetailsPage extends BasePage {
         String[] seletores = {".date-published", ".publication-date"};
         for (String seletor : seletores) {
             try {
-                WebElement elemento = wait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
+                WebElement elemento = shortWait.until(ExpectedConditions.presenceOfElementLocated(By.cssSelector(seletor)));
                 String dataTexto = elemento.getText().trim();
                 return parseData(dataTexto);
             } catch (Exception e) {
@@ -170,7 +170,7 @@ public class JobDetailsPage extends BasePage {
             logger.info("Iniciando candidatura para: {}", tituloAtual);
 
             try {
-                WebElement botao = wait.until(ExpectedConditions.elementToBeClickable(
+                WebElement botao = shortWait.until(ExpectedConditions.elementToBeClickable(
                         By.xpath("//*[@id='VacancyHeader']/div[3]/div[1]/a")
                 ));
                 ((JavascriptExecutor) driver).executeScript("arguments[0].scrollIntoView(true);", botao);

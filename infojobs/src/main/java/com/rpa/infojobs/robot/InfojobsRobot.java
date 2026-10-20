@@ -22,6 +22,10 @@ public class InfojobsRobot {
 
     private static final Semaphore executionLock = new Semaphore(1);
 
+    public boolean isRunning() {
+        return executionLock.availablePermits() == 0;
+    }
+    private String currentUserId;
     private String infojobsEmail;
     private String infojobsPassword;
 
@@ -44,6 +48,7 @@ public class InfojobsRobot {
     private VagaRepository vagaRepository;
 
     public void carregarCredenciais(String userId) {
+        this.currentUserId = userId;
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Usuário não encontrado com ID: " + userId));
         this.infojobsEmail = user.getInfojobsEmail();
@@ -167,7 +172,7 @@ public class InfojobsRobot {
                 log.info("Vaga salva para análise: {}", vaga.getTitulo());
             }
 
-            salvarVagaNoBanco(vaga);
+            salvarVagaNoBanco(vaga, currentUserId);
             searchPage.voltarParaLista();
 
             return true;
@@ -183,20 +188,20 @@ public class InfojobsRobot {
         }
     }
 
-    private void salvarVagaNoBanco(Vaga vaga) {
+    private void salvarVagaNoBanco(Vaga vaga, String userId) {
         try {
-            if (vaga.getUrl() != null && vagaRepository.existsByUrl(vaga.getUrl())) {
-                log.info("Vaga já existe no banco: {}", vaga.getTitulo());
+            vaga.setUserId(userId);
+            if (vaga.getUrl() != null && vagaRepository.existsByUserIdAndUrl(userId, vaga.getUrl())) {
+                log.info("Vaga já existe no banco para este usuário: {}", vaga.getTitulo());
             } else {
                 Vaga saved = vagaRepository.save(vaga);
-                log.info("Vaga salva no banco: ID={} | {} | {} | Candidatura: {}",
-                        saved.getId(),
-                        saved.getTitulo(),
-                        saved.getEmpresa(),
+                log.info("Vaga salva: ID={} | {} | {} | Candidatura: {}",
+                        saved.getId(), saved.getTitulo(), saved.getEmpresa(),
                         saved.getCandidaturaRealizada() ? "SIM" : "NÃO");
             }
         } catch (Exception e) {
             log.error("Erro ao salvar vaga no banco: {}", e.getMessage());
         }
     }
+
 }
